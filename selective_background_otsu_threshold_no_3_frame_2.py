@@ -218,3 +218,4 @@ def change_detection(video_path, bg, threshold,idx):
     cv2.destroyAllWindows()
     
 change_detection('1.avi', bg, thr, idx)
+# something something this way comes
