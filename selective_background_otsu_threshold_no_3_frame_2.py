@@ -45,6 +45,7 @@ def threeframedifference(frame,prev1,prev2, distance_type, threshold):
     mask=mask.astype(np.uint8)*255
     #cv2.imshow('frame', prev1)
     #cv2.imshow('mask', mask)
+    
 def pfm(hist):
     total_pixel = np.sum(hist)
     pfm = []
@@ -184,16 +185,21 @@ def change_detection(video_path, bg, threshold,idx):
         #cv2.imshow('opening', opening)
         #closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE,  cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5)))
         #cv2.imshow('closing', closing)
-        eroded = cv2.erode(thresh, None, iterations=10)
+        eroded = cv2.erode(thresh, None, iterations=1)
         cv2.imshow('eroded', eroded)
-        dilated = cv2.dilate(eroded, None, iterations=10)
+        dilated = cv2.dilate(eroded, None, iterations=4)
         cv2.imshow('dilated', dilated)
         # eroded2 = cv2.erode(dilated, None, iterations=14)
         # cv2.imshow('eroded2', eroded2)
         # then holes are filled with dilation
         # dilated2 = cv2.dilate(eroded, None, iterations=1)
         # cv2.imshow('dilated', dilated2)
-        selective=dilated+mask
+        frame_copy=frame.copy()
+        frame_copy[np.logical_not(mask)] = np.asarray([255,255,255])
+        frame_copy = cv2.cvtColor(frame_copy, cv2.COLOR_BGR2GRAY)
+        #selective=cv2.addWeighted(frame_copy, 0.7, dilated, 0.3, 0.2)
+        selective=cv2.add(frame_copy, dilated)   
+        #selective = selective.astype(np.uint8)*255
         cv2.imshow('selective', selective)
         #if (selective==np.zeros(mask.shape)):
         #    bg=background_update(frame, bg)
@@ -209,7 +215,7 @@ def change_detection(video_path, bg, threshold,idx):
         #keypoints2 = detector_person.detect(closing)
         im_keypoints2 = cv2.drawKeypoints(im_keypoints, keypoints2, np.array([]), (255,0,0), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv2.imshow('Video',im_keypoints2)
-        #time.sleep(0.02)
+        time.sleep(0.02)
         idx +=1
         if cv2.waitKey(1) == ord('q'):
                 break
@@ -218,4 +224,3 @@ def change_detection(video_path, bg, threshold,idx):
     cv2.destroyAllWindows()
     
 change_detection('1.avi', bg, thr, idx)
-# something something this way comes
