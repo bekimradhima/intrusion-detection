@@ -84,7 +84,7 @@ def background_update(bg, prev_bg):
 thr = 20
 distance = L2
 bg = []
-N_frames = 40 # then refresh
+N_frames = 50 # then refresh
 
 
 # def check_light():
@@ -131,6 +131,7 @@ idx = 0
 # computation of the background
 [bg, count] = background_initialization(bg, N_frames, cap, count)
 oldbg=bg
+bg1=bg
 
 
 # bg=cv2.cvtColor(bg.astype(np.uint8), cv2.COLOR_BGR2GRAY)
@@ -206,11 +207,16 @@ def change_detection(video_path, bg, threshold, idx):
         _, contours, hierarchy = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         for i, cnt in enumerate(contours):
             # if the size of the contour is greater than a threshold
-            if cv2.contourArea(cnt) > 5000:
-                cv2.drawContours(frame, [cnt], 0, (0, 255, 0), 5)  # if >0 shows contour
-            elif cv2.contourArea(cnt) > 1000:
+            if cv2.contourArea(cnt) < 1000:
+                continue
+            elif cv2.contourArea(cnt) < 5000:
                 cv2.drawContours(frame, [cnt], 0, (0, 0, 255), 5)  # if >0 shows contour
+            else:
+                (x, y, w, h) = cv2.boundingRect(cnt)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
+
         cv2.imshow('contours', frame)
+        #cv2.resizeWindow('contours', 500, 500)
 
         time.sleep(0.02)
         idx += 1
