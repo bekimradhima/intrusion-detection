@@ -149,17 +149,22 @@ def change_detection(video_path, bg, threshold, idx):
             print("Released Video Resource")
             # Break exit the for loops
             break
+        #Convert to grayscale and blur frames
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-
+        #Compute background suptraction
         mask = (distance(gray, bg) > threshold)
         mask = mask.astype(np.uint8) * 255
-        blur = cv2.GaussianBlur(mask, (5, 5), 0)
-        eroded = cv2.erode(blur, None, iterations=3)
-        # ret, thresh = cv2.threshold(blur, 100, 255, 0) no difference in the video with otsu but i like japanese
-        ret, thresh = cv2.threshold(eroded, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        #Erode mask to minimize false changes, blur to shade figures and threshold to get contours
+        eroded = cv2.erode(mask, None, iterations=3)
+        dilated1 = cv2.dilate(eroded, Rectangular_kernel, iterations=3)
+        blur = cv2.GaussianBlur(dilated1, (5, 5), 0)
+        ret, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         cv2.imshow('thresh', thresh)
+
+        #Dilate figure and close small gaps
         dilated = cv2.dilate(thresh, Rectangular_kernel, iterations=3)
         closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, Rectangular_kernel)
         cv2.imshow('closed', closed)
@@ -186,7 +191,7 @@ def change_detection(video_path, bg, threshold, idx):
         #print(np.mean(bgmask))
 
         #selective update when no change detected with background
-        if np.mean(bgmask) < 0.5 :
+        if np.mean(bgmask) < 0.1 :
             bg = background_update(gray, bg)
             print('selective update')
 
