@@ -77,6 +77,7 @@ def background_initialization(bg, n, cap, count):
 
 def background_update(bg, prev_bg):
     bg = (1 - alfa) * prev_bg + alfa * bg
+    bg = cv2.GaussianBlur(bg, (5, 5), 0)
     return bg
 
 
@@ -130,6 +131,7 @@ count = 0
 idx = 0
 # computation of the background
 [bg, count] = background_initialization(bg, N_frames, cap, count)
+bg= cv2.GaussianBlur(bg, (5, 5), 0)
 oldbg=bg
 bg1=bg
 
