@@ -82,10 +82,10 @@ def background_update(bg, prev_bg):
 
 
 ###Define change detection parameters
-thr = 20
+thr = 25
 distance = L2
 bg = []
-N_frames = 50 # then refresh
+N_frames = 70 # then refresh
 
 
 # def check_light():
@@ -131,17 +131,17 @@ count = 0
 idx = 0
 # computation of the background
 [bg, count] = background_initialization(bg, N_frames, cap, count)
-bg= cv2.GaussianBlur(bg, (5, 5), 0)
+#bg= cv2.GaussianBlur(bg, (5, 5), 0)
 oldbg=bg
 bg1=bg
 
+#fgbg = cv2.createBackgroundSubtractorKNN(1,10,False)
 
-# bg=cv2.cvtColor(bg.astype(np.uint8), cv2.COLOR_BGR2GRAY)
 
 def change_detection(video_path, bg, threshold, idx):
     # previous_frames = []
     cap = cv2.VideoCapture(video_path)
-    update = 0
+    prevhist = 0
     while (cap.isOpened()):
         # Capture frame
         ret, frame = cap.read()
@@ -159,65 +159,78 @@ def change_detection(video_path, bg, threshold, idx):
         mask = (distance(gray, bg) > threshold)
         mask = mask.astype(np.uint8) * 255
 
+
+        #mask= fgbg.apply(gray)
+
+        cv2.imshow('mask', mask)
+
         #Erode mask to minimize false changes, blur to shade figures and threshold to get contours
-        eroded = cv2.erode(mask, None, iterations=3)
-        dilated1 = cv2.dilate(eroded, Rectangular_kernel, iterations=3)
+        eroded1 = cv2.erode(mask, None, iterations=3)
+        dilated1 = cv2.dilate(eroded1, Rectangular_kernel, iterations=3)
         blur = cv2.GaussianBlur(dilated1, (5, 5), 0)
         ret, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        cv2.imshow('thresh', thresh)
 
         #Dilate figure and close small gaps
         dilated = cv2.dilate(thresh, Rectangular_kernel, iterations=3)
-        closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, Rectangular_kernel)
-        cv2.imshow('closed', closed)
+        final = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, Rectangular_kernel)
+
+        cv2.imshow('closed', final)
 
 
 
         #compute the difference with background using alpha blending
-        bgg = bg.astype(np.uint8)
-        bgg1 = bg.astype(np.uint8)
-        bgg[np.logical_not(closed)] = np.asarray([-255])
-        closed1 = 255 - closed
-        bgg1[np.logical_not(closed1)] = np.asarray([255])
-        bgc = bgg + bgg1
-        tbg = background_update(bgc, bg)
+        #bgg = bg.astype(np.uint8)
+        #bgg1 = bg.astype(np.uint8)
+        #bgg[np.logical_not(closed)] = np.asarray([-255])
+        #closed1 = 255 - closed
+        #bgg1[np.logical_not(closed1)] = np.asarray([255])
+        #bgc = bgg + bgg1
+        #tbg = background_update(bgc, bg)
         # bgc=bgg+gray1
-        cv2.imshow('background', tbg.astype(np.uint8))
+        #cv2.imshow('background', tbg.astype(np.uint8))
 
 
+        #bgmask = distance(alfa*gray+(1-alfa)*bg,bg) > 20
+        #bgmask= bgmask.astype(np.uint8) * 255
 
 
-        bgmask = distance(alfa*gray+(1-alfa)*bg,bg) > 20
-        bgmask = bgmask.astype(np.uint8) * 255
-        cv2.imshow('bgmask',bgmask)
+        #avgbg = cv2.convertScaleAbs(avgbg)
+        #cv2.imshow('bgmask',bgmask)
         #print(np.mean(bgmask))
 
         #selective update when no change detected with background
-        if np.mean(bgmask) < 0.1 :
-            bg = background_update(gray, bg)
-            print('selective update')
+        #if np.mean(bgmask) < 0.1 :
+           # bg = background_update(gray, bg)
+           # print('selective update')
+
+        hist, bins = np.histogram(final.flatten(), 256, [0, 256])
+
 
         #update background when ligth changes
-        if np.mean(closed) > 110 :
-            bg = background_update(gray, bg)
-
+        if hist[255] > 1.1*prevhist :
+            cv2.accumulateWeighted(gray, bg, 0.05)
             print('change_updated')
+        prevhist=hist[255]
 
 
-        keypoints = detector_person.detect(eroded)
-        im_keypoints = cv2.drawKeypoints(frame, keypoints, np.array([]), (0, 0, 255),
-                                         cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        keypoints2 = detector_book.detect(closed)
-        im_keypoints2 = cv2.drawKeypoints(im_keypoints, keypoints2, np.array([]), (255, 0, 0),
-                                          cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        cv2.imshow('Video', im_keypoints2)
-        _, contours, hierarchy = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+
+
+
+        #keypoints = detector_person.detect(dilated)
+        #im_keypoints = cv2.drawKeypoints(frame, keypoints, np.array([]), (0, 0, 255),
+        #                                 cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        #keypoints2 = detector_book.detect(dilated)
+        #im_keypoints2 = cv2.drawKeypoints(im_keypoints, keypoints2, np.array([]), (255, 0, 0),
+        #                                  cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        #cv2.imshow('Video', im_keypoints2)
+        _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         for i, cnt in enumerate(contours):
             # if the size of the contour is greater than a threshold
             if cv2.contourArea(cnt) < 1000:
                 continue
-            elif cv2.contourArea(cnt) < 5000:
-                cv2.drawContours(frame, [cnt], 0, (0, 0, 255), 5)  # if >0 shows contour
+            elif cv2.contourArea(cnt) < 2000:
+                cv2.drawContours(frame, [cnt], 0, (0, 0, 255), 1)  # if >0 shows contour
             else:
                 (x, y, w, h) = cv2.boundingRect(cnt)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
