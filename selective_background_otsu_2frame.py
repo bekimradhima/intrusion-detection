@@ -42,7 +42,7 @@ def pfm(hist):
     return np.asarray(pfm)
 
 
-Rectangular_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 # Defining a variable interpolation for mean or median functions
 interpolation = np.median  # or np.mean
 
@@ -70,7 +70,7 @@ def background_initialization(bg, n, cap, count):
 thr = 25
 distance = L2
 bg = []
-N_frames = 40 # then refresh
+N_frames = 100 # then refresh
 
 
 # def check_light():
@@ -100,8 +100,8 @@ personDetectorParameters.filterByInertia = False
 
 # define params for book detection
 bookDetectorParameters.filterByArea = True
-bookDetectorParameters.minArea = 800  # 1000
-bookDetectorParameters.maxArea = 3000  # 5000
+bookDetectorParameters.minArea = 500  # 1000
+bookDetectorParameters.maxArea = 2000  # 5000
 bookDetectorParameters.minDistBetweenBlobs = 0
 bookDetectorParameters.filterByCircularity = False
 bookDetectorParameters.filterByColor = True
@@ -113,7 +113,7 @@ detector_person = cv2.SimpleBlobDetector_create(personDetectorParameters)
 detector_book = cv2.SimpleBlobDetector_create(bookDetectorParameters)
 cap = cv2.VideoCapture('1.avi')
 count = 0
-idx = 0
+
 # computation of the background
 [bg, count] = background_initialization(bg, N_frames, cap, count)
 
@@ -122,11 +122,13 @@ idx = 0
 #fgbg = cv2.createBackgroundSubtractorKNN(1,10,False)
 
 
-def change_detection(video_path, bg, threshold, idx):
+def change_detection(video_path, bg, threshold):
     # previous_frames = []
     cap = cv2.VideoCapture(video_path)
     prevhist = 0
     ftime = True
+    change = False
+    sbg=bg
     while (cap.isOpened()):
         # Capture frame
         ret, frame = cap.read()
@@ -139,84 +141,86 @@ def change_detection(video_path, bg, threshold, idx):
         #Convert to grayscale and blur frames
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
+        #bg=cv2.accumulateWeighted(gray, bg, 0.01)
         #Compute background suptraction
         #mask = (distance(gray, bg) > threshold)
         #mask = mask.astype(np.uint8) * 255
 
         #two background subtraction
         if ftime == True:
-            prev_bg = []
-            prev_bg.append(bg)
+            #First time initialization
+            previous_frames = []
+            previous_frames.append(gray.astype(float))
             mask = distance(gray, bg) > threshold
+            mask0=mask
             ftime = False
         else:
+            #background subtractor
             masks = []
-            mask = distance(gray, bg) > threshold
-            masks.append(mask)
+            mask0 = distance(gray, bg) > threshold
+            masks.append(mask0)
 
-            if len(prev_bg)>0:
-                mask1 = distance(gray,prev_bg) > threshold
-                masks.append(mask1)
-                mask=np.prod(masks, axis=0)
+            cv2.imshow('mask0', mask0.astype(np.uint8) * 255)
+
+            #person detection
+            mask1 = distance(previous_frames[0], gray) > threshold
+            mask1 = cv2.morphologyEx(mask1.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+            mask1 = cv2.dilate(mask1.astype(np.uint8), kernel, iterations=5)
+            masks.append(mask1)
+            cv2.imshow('mask1', mask1*255 )
+            mask = np.prod(masks, axis=0)
+
+            previous_frames.pop(0)
+            previous_frames.append(gray.astype(float))
 
 
+        mask = mask.astype(np.uint8)*255
+        mask0 = mask0.astype(np.uint8)*255
 
-
-        mask = mask.astype(np.uint8) * 255
-
-        #mask= fgbg.apply(gray)
-
-        #cv2.imshow('mask', mask)
-
+        cv2.imshow('mask', mask)
+        cv2.imshow('mask0',mask0)
         #Erode mask to minimize false changes, blur to shade figures and threshold to get contours
-        eroded1 = cv2.erode(mask, None, iterations=3)
-        dilated1 = cv2.dilate(eroded1, Rectangular_kernel, iterations=3)
-        blur = cv2.GaussianBlur(dilated1, (5, 5), 0)
+
+        #object detection morphology
+        erode=cv2.erode(mask0, kernel, iterations=2)
+        blur = cv2.GaussianBlur(erode, (5, 5), 0)
         ret, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY) #+ cv2.THRESH_OTSU)
+        cv2.imshow('closed', thresh)
+        close0 = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        open0 = cv2.morphologyEx(close0, cv2.MORPH_OPEN, kernel)
+        final0 = cv2.dilate(open0, kernel, iterations=4)
+        cv2.imshow('closed0', final0)
 
-        #Dilate figure and close small gaps
-        dilated = cv2.dilate(thresh, Rectangular_kernel, iterations=2)
-        final = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, Rectangular_kernel)
-
+        #Person detector morphology
+        close = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        open = cv2.morphologyEx(close, cv2.MORPH_OPEN, kernel)
+        final = cv2.dilate(open, kernel, iterations=10)
         cv2.imshow('closed', final)
 
 
 
         #compute the difference with background using alpha blending
-        #bgg = bg.astype(np.uint8)
+        bgg = bg.astype(np.uint8)
         #bgg1 = bg.astype(np.uint8)
-        #bgg[np.logical_not(closed)] = np.asarray([-255])
+        bgg[np.logical_not(final)] = np.asarray([-255])
         #closed1 = 255 - closed
-        #bgg1[np.logical_not(closed1)] = np.asarray([255])
+        #bgg1[np.logical_not(255-final)] = np.asarray([-255])
         #bgc = bgg + bgg1
         #tbg = background_update(bgc, bg)
         # bgc=bgg+gray1
-        #cv2.imshow('background', tbg.astype(np.uint8))
+        cv2.imshow('background', bgg)
 
 
-        #bgmask = distance(alfa*gray+(1-alfa)*bg,bg) > 20
-        #bgmask= bgmask.astype(np.uint8) * 255
 
-
-        #avgbg = cv2.convertScaleAbs(avgbg)
-        #cv2.imshow('bgmask',bgmask)
-        #print(np.mean(bgmask))
-
-
-        hist, bins = np.histogram(final.flatten(), 256, [0, 256])
-
-
+        hist, bins = np.histogram(final0.flatten(), 256, [0, 256])
         #update background when ligth changes
         if hist[255] > 1.1*prevhist :
-            prev_bg.pop(0)
-            prev_bg.append(bg)
             cv2.accumulateWeighted(gray, bg, 0.05)
-            print('change_updated')
+            print('change_updated ')
 
 
-        elif hist[255] < 0.5*prevhist :
-            cv2.accumulateWeighted(gray, bg, 0.2)
+        elif hist[255] < 0.1*prevhist :
+            cv2.accumulateWeighted(gray, bg, 0.3)
             print('selective updated')
 
 
@@ -230,14 +234,14 @@ def change_detection(video_path, bg, threshold, idx):
         #keypoints = detector_person.detect(dilated)
         #im_keypoints = cv2.drawKeypoints(frame, keypoints, np.array([]), (0, 0, 255),
         #                                 cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        keypoints2 = detector_book.detect(final)
+        keypoints2 = detector_book.detect(final0)
         frame = cv2.drawKeypoints(frame, keypoints2, np.array([]), (255, 0, 0),
                                           cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         #cv2.imshow('Video', im_keypoints2)
         _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         for i, cnt in enumerate(contours):
             # if the size of the contour is greater than a threshold
-            if cv2.contourArea(cnt) < 3000:
+            if cv2.contourArea(cnt) < 6000:
                 continue
             else:
                 (x, y, w, h) = cv2.boundingRect(cnt)
@@ -255,4 +259,4 @@ def change_detection(video_path, bg, threshold, idx):
     cv2.destroyAllWindows()
 
 
-change_detection('1.avi', bg, thr, idx)
+change_detection('1.avi', bg, thr)
