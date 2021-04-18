@@ -237,11 +237,12 @@ def change_detection(video_path, bg, threshold):
         keypoints2 = detector_book.detect(final0)
         frame = cv2.drawKeypoints(frame, keypoints2, np.array([]), (255, 0, 0),
                                           cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        for j, key in enumerate(keypoints2):
-            print('frame %d'%idx)
-            print('Object %d position is: %d,%d'%(j+1,keypoints2[j].pt[0],keypoints2[j].pt[1]))
+
 
         _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        print('frame %d' % idx)
+
         for i, cnt in enumerate(contours):
             # if the size of the contour is greater than a threshold
             if cv2.contourArea(cnt) < 6000:
@@ -249,6 +250,12 @@ def change_detection(video_path, bg, threshold):
             else:
                 (x, y, w, h) = cv2.boundingRect(cnt)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
+                print('Person position is: %d,%d' % (x, y))
+
+
+        for j, key in enumerate(keypoints2):
+            print('Object %d position is: %d,%d'%(j+1,keypoints2[j].pt[0],keypoints2[j].pt[1]))
+
 
         cv2.imshow('contours', frame)
         #cv2.resizeWindow('contours', 500, 500)
