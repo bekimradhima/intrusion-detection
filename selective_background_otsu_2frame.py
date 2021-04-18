@@ -70,7 +70,7 @@ def background_initialization(bg, n, cap, count):
 thr = 25
 distance = L2
 bg = []
-N_frames = 100 # then refresh
+N_frames = 50 # then refresh
 
 
 # def check_light():
@@ -127,11 +127,11 @@ def change_detection(video_path, bg, threshold):
     cap = cv2.VideoCapture(video_path)
     prevhist = 0
     ftime = True
-    change = False
-    sbg=bg
+    idx=0
     while (cap.isOpened()):
         # Capture frame
         ret, frame = cap.read()
+        idx+=1
         if not ret or frame is None:
             # Release the Video if ret is false
             cap.release()
@@ -237,7 +237,10 @@ def change_detection(video_path, bg, threshold):
         keypoints2 = detector_book.detect(final0)
         frame = cv2.drawKeypoints(frame, keypoints2, np.array([]), (255, 0, 0),
                                           cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        #cv2.imshow('Video', im_keypoints2)
+        for j, key in enumerate(keypoints2):
+            print('frame %d'%idx)
+            print('Object %d position is: %d,%d'%(j+1,keypoints2[j].pt[0],keypoints2[j].pt[1]))
+
         _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         for i, cnt in enumerate(contours):
             # if the size of the contour is greater than a threshold
