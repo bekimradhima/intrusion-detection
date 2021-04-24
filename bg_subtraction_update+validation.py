@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import time
+cv2.HISTCMP_CORREL
 
 def L2(img1, img2):
     sq_dist = (img1 - img2) ** 2
@@ -30,21 +31,24 @@ def skip_background(contours, frame, final, shift1, shift2, index, thresh):
     # ignore contours that are part of the background
 
     # take two shifted contours, add them and mask using original contours to obtain internal contour
-    print(index)
+    #print(index)
     cv2.drawContours(shift1, contours, index, 255, 10, offset=(0, 0))
-    shift1=cv2.erode(shift1,kernel,iterations=3)
-    cv2.imshow('c',shift1)
+    shift1=cv2.erode(shift1,kernel,iterations=4)
+    cv2.imshow('internal',shift1)
     cv2.drawContours(shift2, contours, index, 255, 10, offset=(0, 0))
-    shift2=cv2.dilate(shift2, kernel, iterations=10)
-    final2 = cv2.dilate(final, kernel, iterations=3)
-    shift2=shift2-final2
-    cv2.imshow('d', shift2)
-    external_median = np.median(frame[shift1 > 0], overwrite_input=True)
-    print(external_median)
-    internal_median = np.median(frame[shift2 > 0], overwrite_input=True)
-    print(internal_median)
+    shift2=cv2.dilate(shift2, kernel, iterations=5)
+    shift2=shift2-final
+    shift2=cv2.erode(shift2,kernel,iterations=4)
+    cv2.imshow('external', shift2)
+    external_median =(frame[shift1 > 0])
+    hist = cv2.calcHist([external_median], [0], None, [256], [0, 256])
 
-    if np.abs(external_median - internal_median) < thresh:
+    internal_median =(frame[shift2 > 0])
+    hist1 = cv2.calcHist([internal_median], [0], None, [256], [0, 256])
+    #print('internal %d',internal_median)
+    compare= cv2.compareHist(hist, hist1, cv2.HISTCMP_CORREL)
+    #print(compare)
+    if compare > thresh:
         return True
 
 def object_detector(contours, index, mask):
@@ -59,13 +63,14 @@ distance = L2
 N_frames = 50
 count=0
 bg=[]
-
 cap = cv2.VideoCapture('1.avi')
 [bg, count] = background_initialization(bg, N_frames, cap, count)
+
 
 def change_detection(video_path, bg, threshold):
     ftime=True
     cap = cv2.VideoCapture(video_path)
+    prevhist = cv2.calcHist([bg.astype(np.uint8)], [0], None, [256], [0, 256])
     while (cap.isOpened()):
         # Capture frame
         ret, frame = cap.read()
@@ -89,19 +94,26 @@ def change_detection(video_path, bg, threshold):
 
 
         #Background update
-        hist, bins = np.histogram(final.flatten(), 256, [0, 256])
+        bgg = frame.astype(np.uint8)
+        bgg[np.logical_not(255-final)] = np.asarray([-255])
+        cv2.imshow('bg',bgg)
+        # closed1 = 255 - closed
+        hist = cv2.calcHist([bgg],[0],None,[256],[0,256])
+        #hist, bins = np.histogram(final.flatten(), 256, [0, 256])
+        compare = cv2.compareHist(hist,prevhist, cv2.HISTCMP_CORREL)
+        #print(compare)
         # update background when ligth changes
         if ftime == False:
-            if hist[255] > 1.1 * prevhist:
+            if compare < 0.95:
                 cv2.accumulateWeighted(gray, bg, 0.05)
                 print('change_updated ')
 
 
-            elif hist[255] < 0.1 * prevhist:
-                cv2.accumulateWeighted(gray, bg, 0.3)
-                print('selective updated')
+            #elif hist[255] < 0.1 * prevhist:
+            #    cv2.accumulateWeighted(gray, bg, 0.3)
+            #    print('selective updated')
 
-        prevhist = hist[255]
+        prevhist = hist
         ftime = False
         #find contours
         _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -123,7 +135,7 @@ def change_detection(video_path, bg, threshold):
             # object detector
             if cv2.contourArea(contours[j]) < 100 or cv2.contourArea(contours[j]) > 2000:
                 continue
-            elif skip_background(contours, frame, final , shift1, shift2, j, 40) == True:
+            elif skip_background(contours, frame, final , shift1, shift2, j, 0.3) == True:
                 #draw false object in red
                 cv2.drawContours(frame, contours, j, [0, 0, 255], -1)
             else :
