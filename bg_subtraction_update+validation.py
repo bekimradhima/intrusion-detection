@@ -42,7 +42,6 @@ def skip_background(contours, frame, final, shift1, shift2, index, thresh):
     cv2.imshow('external', shift2)
     external_median =(frame[shift1 > 0])
     hist = cv2.calcHist([external_median], [0], None, [256], [0, 256])
-
     internal_median =(frame[shift2 > 0])
     hist1 = cv2.calcHist([internal_median], [0], None, [256], [0, 256])
     #print('internal %d',internal_median)
@@ -70,7 +69,8 @@ cap = cv2.VideoCapture('1.avi')
 def change_detection(video_path, bg, threshold):
     ftime=True
     cap = cv2.VideoCapture(video_path)
-    prevhist = cv2.calcHist([bg.astype(np.uint8)], [0], None, [256], [0, 256])
+
+
     while (cap.isOpened()):
         # Capture frame
         ret, frame = cap.read()
@@ -87,34 +87,37 @@ def change_detection(video_path, bg, threshold):
         mask = mask.astype(np.uint8) * 255
         cv2.imshow('mask', mask)
 
-        close = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        open = cv2.morphologyEx(close, cv2.MORPH_OPEN, kernel)
-        final = cv2.dilate(open, kernel, iterations=3)
+        open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel)
+        final = cv2.dilate(close, kernel, iterations=3)
         cv2.imshow('morph', final)
 
 
         #Background update
-        bgg = frame.astype(np.uint8)
-        bgg[np.logical_not(255-final)] = np.asarray([-255])
-        cv2.imshow('bg',bgg)
+        #bgg = frame.astype(np.uint8)
+        #bgg[np.logical_not(255-final)] = np.asarray([-255])
+        #cv2.imshow('bg',bgg)
         # closed1 = 255 - closed
-        hist = cv2.calcHist([bgg],[0],None,[256],[0,256])
-        #hist, bins = np.histogram(final.flatten(), 256, [0, 256])
-        compare = cv2.compareHist(hist,prevhist, cv2.HISTCMP_CORREL)
+        #hist = cv2.calcHist([bgg],[0],None,[256],[0,256])
+        hist, bins = np.histogram(final.flatten(), 256, [0, 256])
+
         #print(compare)
         # update background when ligth changes
+
         if ftime == False:
-            if compare < 0.95:
+            if hist[255] > 1.1 * prevhist:
                 cv2.accumulateWeighted(gray, bg, 0.05)
                 print('change_updated ')
 
 
-            #elif hist[255] < 0.1 * prevhist:
-            #    cv2.accumulateWeighted(gray, bg, 0.3)
-            #    print('selective updated')
+            elif hist[255] < 0.1 * prevhist:
+                cv2.accumulateWeighted(gray, bg, 0.3)
+                print('selective updated')
 
-        prevhist = hist
         ftime = False
+        prevhist = hist[255]
+
+
         #find contours
         _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -135,7 +138,7 @@ def change_detection(video_path, bg, threshold):
             # object detector
             if cv2.contourArea(contours[j]) < 100 or cv2.contourArea(contours[j]) > 2000:
                 continue
-            elif skip_background(contours, frame, final , shift1, shift2, j, 0.3) == True:
+            elif skip_background(contours, frame, final , shift1, shift2, j, 0.9) == True:
                 #draw false object in red
                 cv2.drawContours(frame, contours, j, [0, 0, 255], -1)
             else :
