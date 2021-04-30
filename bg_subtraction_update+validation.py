@@ -1,7 +1,13 @@
 import numpy as np
 import cv2
 import time
-cv2.HISTCMP_CORREL
+
+
+kernelq=np.array([[4, 3, 2, 3, 4],
+       [3, 2, 1, 2, 3],
+       [2, 1, 0, 1, 2],
+       [3, 2, 1, 2, 3],
+       [4, 3, 2, 3, 4]], dtype=np.uint8)/100
 
 def L2(img1, img2):
     sq_dist = (img1 - img2) ** 2
@@ -10,12 +16,25 @@ def L2(img1, img2):
     diff = np.sqrt(sq_dist)
     return diff
 
+def pfm(hist):
+    total_pixel = np.sum(hist)
+    pfm = []
+    for i in range(256):
+        pfm_i = np.sum(hist[:i]) / total_pixel
+        pfm.append(pfm_i)
+    return np.asarray(pfm)
+
+def exponential_operator(img, r):
+    exp_img = ((img/255)**r)
+    return exp_img
+
+
 def background_initialization(bg, n, cap, count):
     while cap.isOpened() and count < n:
         ret, frame = cap.read()
         frame=cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
         if ret or not frame is None:
-            frame = cv2.GaussianBlur(frame, (5, 5), 0)
+            frame = cv2.GaussianBlur(frame, (7,7), 1)
             bg.append(frame)
             count += 1
             # print(count)
@@ -40,10 +59,10 @@ def skip_background(contours, frame, final, shift1, shift2, index, thresh):
     shift2=shift2-final
     shift2=cv2.erode(shift2,kernel,iterations=4)
     cv2.imshow('external', shift2)
-    external_median =(frame[shift1 > 0])
-    hist = cv2.calcHist([external_median], [0], None, [256], [0, 256])
-    internal_median =(frame[shift2 > 0])
-    hist1 = cv2.calcHist([internal_median], [0], None, [256], [0, 256])
+    internal_contour =(frame[shift1 > 0])
+    hist = cv2.calcHist([internal_contour], [0], None, [256], [0, 256])
+    external_contour =(frame[shift2 > 0])
+    hist1 = cv2.calcHist([external_contour], [0], None, [256], [0, 256])
     #print('internal %d',internal_median)
     compare= cv2.compareHist(hist, hist1, cv2.HISTCMP_CORREL)
     #print(compare)
@@ -57,7 +76,7 @@ def object_detector(contours, index, mask):
 
 interpolation = np.median
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-thr = 30
+thr = 0.11
 distance = L2
 N_frames = 50
 count=0
@@ -81,17 +100,36 @@ def change_detection(video_path, bg, threshold):
             # Break exit the for loops
             break
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        gray = cv2.GaussianBlur(gray, (7, 7), 1)
+        cv2.imshow('blur',gray)
 
-        mask = distance(gray, bg) > threshold
+        #hist1, bins = np.histogram(gray.flatten(), 256, [0, 256])
+        #eq=pfm(hist1)
+        #gray1=eq[gray]
+        #bg = bg.astype(np.uint8)
+        #hist2, bins = np.histogram(bg.flatten(), 256, [0, 256])
+        #eq2=pfm(hist2)
+        #bg1=eq2[bg]
+
+        gray1=exponential_operator(gray,0.6)
+        bg1=exponential_operator(bg,0.6)
+
+        cv2.imshow('stretch', gray1)
+        cv2.imshow('stretchbg', bg1)
+
+        #gray = linear_stretching(np.copy(gray), 130, 0)
+        #bg = linear_stretching(np.copy(bg),130,0)
+
+        mask = distance(gray1, bg1) > threshold
         mask = mask.astype(np.uint8) * 255
         cv2.imshow('mask', mask)
 
-        open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel)
-        final = cv2.dilate(close, kernel, iterations=3)
-        cv2.imshow('morph', final)
 
+        open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel,iterations=5)
+        final = cv2.dilate(close, kernel, iterations=3)
+
+        cv2.imshow('morph', final)
 
         #Background update
         #bgg = frame.astype(np.uint8)
@@ -101,12 +139,16 @@ def change_detection(video_path, bg, threshold):
         #hist = cv2.calcHist([bgg],[0],None,[256],[0,256])
         hist, bins = np.histogram(final.flatten(), 256, [0, 256])
 
+
+
+
         #print(compare)
         # update background when ligth changes
 
         if ftime == False:
-            if hist[255] > 1.1 * prevhist:
-                cv2.accumulateWeighted(gray, bg, 0.05)
+
+            if hist[255] > 1.2 * prevhist:
+                #cv2.accumulateWeighted(gray, bg, 0.05)
                 print('change_updated ')
 
 
@@ -119,12 +161,9 @@ def change_detection(video_path, bg, threshold):
 
 
         #find contours
-        _, contours, hierarchy = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        _, contours, hierarchy = cv2.findContours(final, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 
-        image_external = np.zeros(final.shape, np.uint8)
-        colored_contours = np.zeros(frame.shape)
-        original_contour = np.zeros(final.shape, np.uint8)
         shift2 = np.zeros(final.shape, np.uint8)
         shift1 = np.zeros(final.shape, np.uint8)
 
