@@ -25,7 +25,7 @@ def pfm(hist):
     return np.asarray(pfm)
 
 def exponential_operator(img, r):
-    exp_img = ((img/255)**r)
+    exp_img = ((img/255)**r) * 256
     return exp_img
 
 
@@ -34,7 +34,7 @@ def background_initialization(bg, n, cap, count):
         ret, frame = cap.read()
         frame=cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
         if ret or not frame is None:
-            frame = cv2.GaussianBlur(frame, (7,7), 1)
+            #frame = cv2.GaussianBlur(frame, (7,7), 1)
             bg.append(frame)
             count += 1
             # print(count)
@@ -53,12 +53,12 @@ def skip_background(contours, frame, final, shift1, shift2, index, thresh):
     #print(index)
     cv2.drawContours(shift1, contours, index, 255, 10, offset=(0, 0))
     shift1=cv2.erode(shift1,kernel,iterations=4)
-    cv2.imshow('internal',shift1)
+    #cv2.imshow('internal',shift1)
     cv2.drawContours(shift2, contours, index, 255, 10, offset=(0, 0))
     shift2=cv2.dilate(shift2, kernel, iterations=5)
     shift2=shift2-final
     shift2=cv2.erode(shift2,kernel,iterations=4)
-    cv2.imshow('external', shift2)
+    #cv2.imshow('external', shift2)
     internal_contour =(frame[shift1 > 0])
     hist = cv2.calcHist([internal_contour], [0], None, [256], [0, 256])
     external_contour =(frame[shift2 > 0])
@@ -76,7 +76,7 @@ def object_detector(contours, index, mask):
 
 interpolation = np.median
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-thr = 0.11
+thr = 30
 distance = L2
 N_frames = 50
 count=0
@@ -100,7 +100,7 @@ def change_detection(video_path, bg, threshold):
             # Break exit the for loops
             break
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (7, 7), 1)
+        #gray = cv2.GaussianBlur(gray, (7, 7), 1)
         cv2.imshow('blur',gray)
 
         #hist1, bins = np.histogram(gray.flatten(), 256, [0, 256])
@@ -111,11 +111,14 @@ def change_detection(video_path, bg, threshold):
         #eq2=pfm(hist2)
         #bg1=eq2[bg]
 
-        gray1=exponential_operator(gray,0.6)
-        bg1=exponential_operator(bg,0.6)
+        hist = cv2.calcHist([frame], [0], None, [256], [0, 256])
+        #condizione su r da cambiare
+        r = np.mean(pfm(hist))
+        gray1=exponential_operator(gray,r)
+        bg1=exponential_operator(bg,r)
 
-        cv2.imshow('stretch', gray1)
-        cv2.imshow('stretchbg', bg1)
+        #cv2.imshow('stretch', gray1)
+        #cv2.imshow('stretchbg', bg1)
 
         #gray = linear_stretching(np.copy(gray), 130, 0)
         #bg = linear_stretching(np.copy(bg),130,0)
@@ -126,20 +129,33 @@ def change_detection(video_path, bg, threshold):
 
 
         open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel,iterations=5)
+        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel,iterations=3)
         final = cv2.dilate(close, kernel, iterations=3)
 
         cv2.imshow('morph', final)
 
-        #Background update
-        #bgg = frame.astype(np.uint8)
-        #bgg[np.logical_not(255-final)] = np.asarray([-255])
-        #cv2.imshow('bg',bgg)
-        # closed1 = 255 - closed
-        #hist = cv2.calcHist([bgg],[0],None,[256],[0,256])
+
+
+        edges = frame.astype(np.uint8)
+        edges[np.logical_not(final)] = np.asarray([-255])
+
+        #find edges and use as a mask for floodfill
+        edges = cv2.Canny(edges,100,200)
+        mask1 = cv2.copyMakeBorder(edges, 1, 1, 1, 1, cv2.BORDER_CONSTANT, 0)
+        cv2.imshow('a0', mask1)
+        final2 = np.copy(final)
+        cv2.floodFill(final2, mask1, (0, 0), 255);
+        #cv2.imshow('floodfill1', final2)
+        # Invert floodfilled image
+        im_floodfill_inv = cv2.bitwise_not(final2)
+        im_floodfill_inv = cv2.dilate(im_floodfill_inv, kernel, iterations=3)
+        # Combine the two images to get the foreground.
+        cv2.imshow('floodfill2', im_floodfill_inv)
+        out = final | im_floodfill_inv
+        cv2.imshow('floodfill', out)
+
+
         hist, bins = np.histogram(final.flatten(), 256, [0, 256])
-
-
 
 
         #print(compare)
@@ -147,12 +163,11 @@ def change_detection(video_path, bg, threshold):
 
         if ftime == False:
 
-            if hist[255] > 1.2 * prevhist:
-                #cv2.accumulateWeighted(gray, bg, 0.05)
+            if hist[255] > 1.3 * prevhist:
+                cv2.accumulateWeighted(gray, bg, 0.05)
                 print('change_updated ')
 
-
-            elif hist[255] < 0.1 * prevhist:
+            elif hist[255] < 0.5 * prevhist:
                 cv2.accumulateWeighted(gray, bg, 0.3)
                 print('selective updated')
 
@@ -161,7 +176,7 @@ def change_detection(video_path, bg, threshold):
 
 
         #find contours
-        _, contours, hierarchy = cv2.findContours(final, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        _, contours, hierarchy = cv2.findContours(out, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 
         shift2 = np.zeros(final.shape, np.uint8)
