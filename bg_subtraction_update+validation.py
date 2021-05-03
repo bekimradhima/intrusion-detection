@@ -16,14 +16,6 @@ def L2(img1, img2):
     diff = np.sqrt(sq_dist)
     return diff
 
-def pfm(hist):
-    total_pixel = np.sum(hist)
-    pfm = []
-    for i in range(256):
-        pfm_i = np.sum(hist[:i]) / total_pixel
-        pfm.append(pfm_i)
-    return np.asarray(pfm)
-
 def exponential_operator(img, r):
     exp_img = ((img/255)**r) * 256
     return exp_img
@@ -46,18 +38,18 @@ def background_initialization(bg, n, cap, count):
     cv2.destroyAllWindows()
     return [bg_inter, count]
 
-def skip_background(contours, frame, final, shift1, shift2, index, thresh):
+def skip_background(contours, frame, mask, shift1, shift2, index, thresh):
     # ignore contours that are part of the background
 
     # take two shifted contours, add them and mask using original contours to obtain internal contour
     #print(index)
-    cv2.drawContours(shift1, contours, index, 255, 10, offset=(0, 0))
+    cv2.drawContours(shift1, contours, index, 255, -1, offset=(0, 0))
     shift1=cv2.erode(shift1,kernel,iterations=4)
     #cv2.imshow('internal',shift1)
     cv2.drawContours(shift2, contours, index, 255, 10, offset=(0, 0))
-    shift2=cv2.dilate(shift2, kernel, iterations=5)
-    shift2=shift2-final
-    shift2=cv2.erode(shift2,kernel,iterations=4)
+    #shift2=cv2.dilate(shift2, kernel, iterations=5)
+    shift2=shift2-mask
+    #shift2=cv2.erode(shift2,kernel,iterations=4)
     #cv2.imshow('external', shift2)
     internal_contour =(frame[shift1 > 0])
     hist = cv2.calcHist([internal_contour], [0], None, [256], [0, 256])
@@ -68,11 +60,6 @@ def skip_background(contours, frame, final, shift1, shift2, index, thresh):
     #print(compare)
     if compare > thresh:
         return True
-
-def object_detector(contours, index, mask):
-    # detect, classify and log objects moving in the frame
-    if (500 < cv2.contourArea(contours[index]) < 5000):
-        cv2.drawContours(mask, contours, index,[0, 255, 0], -1)
 
 interpolation = np.median
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -111,9 +98,25 @@ def change_detection(video_path, bg, threshold):
         #eq2=pfm(hist2)
         #bg1=eq2[bg]
 
+        #set exponential stretching from histogram peak
         hist = cv2.calcHist([frame], [0], None, [256], [0, 256])
-        #condizione su r da cambiare
-        r = np.mean(pfm(hist))
+        max = (np.max(hist))
+        peak = np.where(hist == max)
+        peak = peak[0]
+
+        if 0 <= peak < 50:
+            r= 4
+        elif 51 <= peak < 102:
+            r= 2
+        elif 103 <= peak < 153:
+            r= 0.8
+        elif 154 <= peak < 205:
+            r= 0.6
+        elif 206 <= peak < 256:
+            r= 0.4
+        else:
+            r=1
+
         gray1=exponential_operator(gray,r)
         bg1=exponential_operator(bg,r)
 
@@ -142,7 +145,7 @@ def change_detection(video_path, bg, threshold):
         #find edges and use as a mask for floodfill
         edges = cv2.Canny(edges,100,200)
         mask1 = cv2.copyMakeBorder(edges, 1, 1, 1, 1, cv2.BORDER_CONSTANT, 0)
-        cv2.imshow('a0', mask1)
+        #cv2.imshow('a0', mask1)
         final2 = np.copy(final)
         cv2.floodFill(final2, mask1, (0, 0), 255);
         #cv2.imshow('floodfill1', final2)
@@ -155,8 +158,7 @@ def change_detection(video_path, bg, threshold):
         cv2.imshow('floodfill', out)
 
 
-        hist, bins = np.histogram(final.flatten(), 256, [0, 256])
-
+        hist, bins = np.histogram(out.flatten(), 256, [0, 256])
 
         #print(compare)
         # update background when ligth changes
@@ -167,7 +169,7 @@ def change_detection(video_path, bg, threshold):
                 cv2.accumulateWeighted(gray, bg, 0.05)
                 print('change_updated ')
 
-            elif hist[255] < 0.5 * prevhist:
+            elif hist[255] < 0.3 * prevhist:
                 cv2.accumulateWeighted(gray, bg, 0.3)
                 print('selective updated')
 
@@ -179,20 +181,20 @@ def change_detection(video_path, bg, threshold):
         _, contours, hierarchy = cv2.findContours(out, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 
-        shift2 = np.zeros(final.shape, np.uint8)
-        shift1 = np.zeros(final.shape, np.uint8)
+        shift2 = np.zeros(out.shape, np.uint8)
+        shift1 = np.zeros(out.shape, np.uint8)
 
         for i, cnt in enumerate(contours):
              #person detector
-             if cv2.contourArea(cnt)>6000:
+             if cv2.contourArea(cnt)>5000:
                  #draw person in blue
                 cv2.drawContours(frame, contours,i,[255, 0, 0], -1)
 
         for j, cnt in enumerate(contours):
             # object detector
-            if cv2.contourArea(contours[j]) < 100 or cv2.contourArea(contours[j]) > 2000:
+            if cv2.contourArea(contours[j]) < 500 or cv2.contourArea(contours[j]) > 2000:
                 continue
-            elif skip_background(contours, frame, final , shift1, shift2, j, 0.9) == True:
+            elif skip_background(contours, frame, out , shift1, shift2, j, 0.5) == True:
                 #draw false object in red
                 cv2.drawContours(frame, contours, j, [0, 0, 255], -1)
             else :
