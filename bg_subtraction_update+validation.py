@@ -73,7 +73,7 @@ cap = cv2.VideoCapture('1.avi')
 
 
 def change_detection(video_path, bg, threshold):
-    ftime=True
+    ftime = True
     cap = cv2.VideoCapture(video_path)
 
 
@@ -88,7 +88,6 @@ def change_detection(video_path, bg, threshold):
             break
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         #gray = cv2.GaussianBlur(gray, (7, 7), 1)
-        cv2.imshow('blur',gray)
 
         #hist1, bins = np.histogram(gray.flatten(), 256, [0, 256])
         #eq=pfm(hist1)
@@ -117,8 +116,13 @@ def change_detection(video_path, bg, threshold):
         else:
             r=1
 
+
+
         gray1=exponential_operator(gray,r)
         bg1=exponential_operator(bg,r)
+
+        gray2 = cv2.GaussianBlur(gray1, (7, 7), 0)
+        bg2 = cv2.GaussianBlur(bg1, (7, 7), 0)
 
         #cv2.imshow('stretch', gray1)
         #cv2.imshow('stretchbg', bg1)
@@ -126,55 +130,55 @@ def change_detection(video_path, bg, threshold):
         #gray = linear_stretching(np.copy(gray), 130, 0)
         #bg = linear_stretching(np.copy(bg),130,0)
 
-        mask = distance(gray1, bg1) > threshold
+    ### mask with blurred stretched images
+        mask = distance(gray2, bg2) > threshold
         mask = mask.astype(np.uint8) * 255
         cv2.imshow('mask', mask)
 
 
         open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel,iterations=3)
-        final = cv2.dilate(close, kernel, iterations=3)
+        close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, kernel,iterations=1)
+        dilate = cv2.dilate(close, kernel, iterations=5)
 
-        cv2.imshow('morph', final)
+        cv2.imshow('morph', dilate)
 
 
+        copy_frame = gray1.astype(np.uint8)
+        copy_frame[np.logical_not(dilate)] = np.asarray([255])
+
+        copy_bg = bg1.astype(np.uint8)
+        copy_bg[np.logical_not(dilate)] = np.asarray([255])
+    ### mask stretched
+        mask1 = (distance(copy_frame, copy_bg) > 10)
+        mask1 = mask1.astype(np.uint8) * 255
+        cv2.imshow('second mask', mask1)
+        blur = cv2.GaussianBlur(mask1, (5, 5), 0)
+        ret, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        close1 = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+        cv2.imshow('second morph', close1)
 
         edges = frame.astype(np.uint8)
-        edges[np.logical_not(final)] = np.asarray([-255])
+        edges[np.logical_not(close1)] = np.asarray([-255])
 
         #find edges and use as a mask for floodfill
         edges = cv2.Canny(edges,100,200)
         mask1 = cv2.copyMakeBorder(edges, 1, 1, 1, 1, cv2.BORDER_CONSTANT, 0)
         #cv2.imshow('a0', mask1)
-        final2 = np.copy(final)
+        final2 = np.copy(close1)
         cv2.floodFill(final2, mask1, (0, 0), 255);
         #cv2.imshow('floodfill1', final2)
         # Invert floodfilled image
         im_floodfill_inv = cv2.bitwise_not(final2)
-        im_floodfill_inv = cv2.dilate(im_floodfill_inv, kernel, iterations=3)
+        #im_floodfill_inv = cv2.dilate(im_floodfill_inv, kernel, iterations=3)
         # Combine the two images to get the foreground.
         cv2.imshow('floodfill2', im_floodfill_inv)
-        out = final | im_floodfill_inv
+        out = close1 | im_floodfill_inv
         cv2.imshow('floodfill', out)
 
 
         hist, bins = np.histogram(out.flatten(), 256, [0, 256])
 
         #print(compare)
-        # update background when ligth changes
-
-        if ftime == False:
-
-            if hist[255] > 1.3 * prevhist:
-                cv2.accumulateWeighted(gray, bg, 0.05)
-                print('change_updated ')
-
-            elif hist[255] < 0.3 * prevhist:
-                cv2.accumulateWeighted(gray, bg, 0.3)
-                print('selective updated')
-
-        ftime = False
-        prevhist = hist[255]
 
 
         #find contours
@@ -186,13 +190,13 @@ def change_detection(video_path, bg, threshold):
 
         for i, cnt in enumerate(contours):
              #person detector
-             if cv2.contourArea(cnt)>5000:
+             if 20000>cv2.contourArea(cnt)>5000:
                  #draw person in blue
                 cv2.drawContours(frame, contours,i,[255, 0, 0], -1)
 
         for j, cnt in enumerate(contours):
             # object detector
-            if cv2.contourArea(contours[j]) < 500 or cv2.contourArea(contours[j]) > 2000:
+            if cv2.contourArea(contours[j]) < 300 or cv2.contourArea(contours[j]) > 3000:
                 continue
             elif skip_background(contours, frame, out , shift1, shift2, j, 0.5) == True:
                 #draw false object in red
@@ -203,6 +207,22 @@ def change_detection(video_path, bg, threshold):
 
 
         cv2.imshow('contours', frame)
+
+        blob_count = len(contours)
+
+        if ftime == False:
+
+            if hist[255] > 1.2 * prevhist:
+                #cv2.accumulateWeighted(gray, bg, 0.01)
+                print('change_updated ')
+
+            if blob_count < 1:
+                cv2.accumulateWeighted(gray, bg, 0.3)
+                print('selective updated')
+
+        ftime = False
+        prevhist = hist[255]
+
         time.sleep(0.02)
 
         if cv2.waitKey(1) == ord('q'):
