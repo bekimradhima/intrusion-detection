@@ -256,7 +256,7 @@ def auto_canny(image, sigma=0.33):
     return edged
 
 
-def change_detection(video_path, bg, threshold, frame, b):
+def change_detection(video_path,bg, threshold, frame, b):
     # previous_frames = []
     cap = cv2.VideoCapture(video_path)
     prevhist = 0
@@ -277,14 +277,56 @@ def change_detection(video_path, bg, threshold, frame, b):
             break
         # Convert to grayscale and blur frames
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        sgray =np.copy(gray)
+        sbg = np.copy(gray)
+
+        if ftime==True:
+            pgray=np.copy(sgray)
+            ftime=False
+           # bg=sgray.astype(np.uint8)
+            selective_bg=[sbg]
+            idx=0
+
+        elif idx<100:
+
+            smask = (distance(sgray, pgray) > 5)
+            smask=smask.astype(np.uint8) * 255
+            cv2.imshow('premask',smask)
+            pgray=sgray
+            sopen=cv2.morphologyEx(smask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+                                      iterations = 2)
+            sdilate=cv2.dilate(sopen, None, iterations=5)
+            sinv = 255 - sdilate
+            sbg[np.logical_not(sinv)] = np.asarray(0)
+            sbg1=np.copy(sbg)
+            cv2.imshow('prem', sbg1)
+
+            if idx % 2 == 0:
+                selective_bg.append(sbg)
+            selective = np.stack(selective_bg, axis=0)
+            selective = interpolation(selective, axis=0)
+            selective = selective.astype(np.uint8)
+            sbg=selective
+                #selective_bg2.append(selective)
+                #selective2 = np.stack(selective_bg2, axis=0)
+                #selective2 = interpolation(selective2, axis=0)
+                #selective2 = selective2.astype(np.uint8)
+               # alfa=0.1
+               # new_bg = np.zeros(final.shape, np.uint8)
+            # new_bg = (1 - alfa) * selective_bg + alfa * selective_bg
+               # asbg=cv2.multiply(alfa, selective_bg[0])
+               # aselective=cv2.multiply((1 - alfa), selective_bg[1])
+               # aselective=aselective.astype(np.uint8)
+               # cv2.add(asbg,aselective,new_bg)
+               # selective_bg.pop(-1)
+               # cv2.imshow('premask', new_bg)
 
 
-        gray1 = linear_stretching(np.copy(gray), 255, 170)
-        # gray2=cv2.bitwise_not(gray1.astype(np.uint8))
-        gray4 = 255 - gray1.astype(np.uint8)
-        #cv2.imshow('gray4', gray4)
-        gray3 = np.copy(gray)
-        gray3[gray4 < 255] = np.asarray(0)
+            idx += 1
+            print(idx)
+            cv2.imshow('selective', sbg)
+
+
         # bg=linear_stretching(np.copy(bg), 255,170)
         # bg2=bg.astype(np.uint8)
         # bg2[gray4<255]=np.asarray(0)
@@ -293,56 +335,23 @@ def change_detection(video_path, bg, threshold, frame, b):
         #cv2.imshow('bg', bg)
         # cv2.imshow('gray23', bg2)
         # Compute background suptraction
-
+        bg=sbg
         gray0 = cv2.GaussianBlur(gray, (15, 15), 0)
         bg0 = cv2.GaussianBlur(bg, (15, 15), 0)
-        mask = (distance(gray0, bg0) > threshold)
+        mask = (distance(gray0, bg0) > 10)
 
         mask = mask.astype(np.uint8) * 255
         # mask= fgbg.apply(gray)
         cv2.imshow('mask', mask)
         blur = cv2.GaussianBlur(mask, (5, 5), 0)
-        cv2.imshow('Blur', blur)
+        #cv2.imshow('Blur', blur)
         # blur2 = cv2.filter2D(blur,-1,denoising_kernel)
         # blur2=cv2.fastNlMeansDenoising(blur)
         # cv2.imshow('Blur2', blur2)
         ret, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
 
-        sgray=gray
-        sbg=bg
-        sbg=sbg.astype(np.uint8)
-        cv2.imshow('bg',sbg)
-        cv2.imshow('gray',sgray)
 
-        if ftime==True:
-            pgray=sgray
-            ftime=False
-            sbg=sgray.astype(np.uint8)
-            selective_bg=[gray]
-            idx=0
-
-        else :
-
-            smask = (distance(sgray, pgray) > 5)
-            smask=smask.astype(np.uint8) * 255
-            #cv2.imshow('premask',smask)
-            pgray=sgray
-
-            sopen=cv2.morphologyEx(smask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
-                                      iterations = 2)
-            sdilate=cv2.dilate(sopen, None, iterations=5)
-            inv = 255 - sdilate
-            sbg[np.logical_not(inv)] = np.asarray(0)
-            #cv2.imshow('prem', sbg)
-            if idx % 2 == 0:
-                selective_bg.append(sbg)
-            selective = np.stack(selective_bg, axis=0)
-            selective = interpolation(selective, axis=0)
-            selective = selective.astype(np.uint8)
-            idx+=1
-            print(idx)
-            cv2.imshow('prem', selective)
 
 
             #ssbg[inv == 255] = np.asarray(0)
@@ -357,8 +366,6 @@ def change_detection(video_path, bg, threshold, frame, b):
             #selective_bg.pop(-1)
             #cv2.imshow('premask', new_bg)
 
-        if idx > 1:
-            cv2.imshow('prem2', selective)
         #cv2.imshow('thresh', thresh)
         # im_out = thresh | im_floodfill_inv
         # cv2.imshow('combine', im_out)
@@ -373,7 +380,7 @@ def change_detection(video_path, bg, threshold, frame, b):
         closing = dilated
         inv_closing = 255 - closing
         # closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE,  cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)), iterations = 5)
-        cv2.imshow('inv_closing', inv_closing)
+        cv2.imshow('closing', closing)
         # dilated = cv2.dilate(opening, None, iterations=2)
         # cv2.imshow('dilated', dilated)
         # edges = gray.astype(np.uint8)
@@ -449,7 +456,7 @@ def change_detection(video_path, bg, threshold, frame, b):
                 cv2.drawContours(frame, contours, j, [0, 255, 0], -1)
 
         cv2.imshow('contours', frame)
-        time.sleep(0.1)
+        time.sleep(0.02)
         # if (cond==True):
         #     cond2 = True
         if (cond == True and hist[255] > 1.1 * prevhist):
@@ -473,4 +480,4 @@ def change_detection(video_path, bg, threshold, frame, b):
     cv2.destroyAllWindows()
 
 
-change_detection('1.avi', bg, thr, frame, b)
+change_detection('1.avi',bg, thr, frame, b)
